@@ -65,11 +65,13 @@ func importWAZip(d *store.DB, path string) (int, error) {
 		return 0, err
 	}
 	defer rc.Close()
-	source := path + "#" + sanitizeSource(base)
+	source := path + "#" + SanitizeSource(base)
 	return ImportWhatsApp(d, rc, source)
 }
 
-func sanitizeSource(s string) string {
+// SanitizeSource replaces ASCII control characters in a source
+// identifier with spaces. Shared by zip ingest and the CLI list path.
+func SanitizeSource(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
 			return ' '

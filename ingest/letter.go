@@ -29,7 +29,7 @@ func ImportLetter(d *store.DB, r io.Reader, source string) (int, error) {
 
 	title := ""
 	bodySrc := s
-	if isEMLSource(source, s) {
+	if isEMLSource(s) {
 		msg, err := mail.ReadMessage(strings.NewReader(s))
 		if err != nil {
 			return 0, fmt.Errorf("eml parse failed for %s: %w", source, err)
@@ -61,14 +61,14 @@ func ImportLetter(d *store.DB, r io.Reader, source string) (int, error) {
 	return 1, nil
 }
 
-func isEMLSource(source, s string) bool {
-	// .eml is a hint, not a hard gate — header sniff decides.
+func isEMLSource(s string) bool {
 	head := s
 	if len(head) > 800 {
 		head = head[:800]
 	}
-	hasSubject := strings.Contains(head, "\nSubject:") || strings.HasPrefix(head, "Subject:")
-	hasFrom := strings.Contains(head, "\nFrom:") || strings.HasPrefix(head, "From:")
+	low := strings.ToLower(head)
+	hasSubject := strings.Contains(low, "\nsubject:") || strings.HasPrefix(low, "subject:")
+	hasFrom := strings.Contains(low, "\nfrom:") || strings.HasPrefix(low, "from:")
 	return hasSubject && hasFrom
 }
 

@@ -131,7 +131,7 @@ func cmdList(argv []string) error {
 		return err
 	}
 	for _, it := range items {
-		fmt.Printf("[%s] %s  (%s)\n", it.Kind, it.Title, sanitizeSource(it.Source))
+		fmt.Printf("[%s] %s  (%s)\n", it.Kind, it.Title, ingest.SanitizeSource(it.Source))
 	}
 	return nil
 }
@@ -142,13 +142,4 @@ func clip(s string, n int) string {
 		return s[:n] + "…"
 	}
 	return s
-}
-
-func sanitizeSource(s string) string {
-	return strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
-			return ' '
-		}
-		return r
-	}, s)
 }

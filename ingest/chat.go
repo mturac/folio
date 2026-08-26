@@ -40,6 +40,9 @@ func ImportWhatsApp(d *store.DB, r io.Reader, source string) (int, error) {
 		if !ok {
 			// continuation of previous message
 			if b.Len() > 0 {
+				if b.Len()+1+len(line) > maxChatBody {
+					return 0, fmt.Errorf("chat export %s exceeds %d bytes; split the export", source, maxChatBody)
+				}
 				b.WriteByte('\n')
 				b.WriteString(line)
 			}

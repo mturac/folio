@@ -52,8 +52,7 @@ func ImportShots(d *store.DB, dir string, ocr OCRFunc) (int, error) {
 		}
 		body := strings.TrimSpace(text)
 		if body == "" {
-			// OCR succeeded but found no text — keep the file findable.
-			body = e.Name()
+			body = e.Name() + " (no text recognized)"
 		}
 		if _, err := d.Add(store.Item{
 			Kind:   store.KindShot,
