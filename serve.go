@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -32,6 +31,10 @@ func cmdServe(argv []string) error {
 		fmt.Fprint(w, indexHTML)
 	})
 	mux.HandleFunc("/api/search", func(w http.ResponseWriter, r *http.Request) {
+		if len(r.URL.RawQuery) > 4096 {
+			http.Error(w, "query too long", http.StatusRequestURITooLong)
+			return
+		}
 		q := r.URL.Query().Get("q")
 		if len(q) > 256 {
 			http.Error(w, "query too long", http.StatusRequestURITooLong)
@@ -42,7 +45,7 @@ func cmdServe(argv []string) error {
 		if q == "" {
 			items, err = d.List("", 80)
 		} else {
-			items, err = d.Search(q)
+			items, err = d.SearchContext(r.Context(), q)
 		}
 		if err != nil {
 			log.Printf("search: %v", err)
@@ -58,7 +61,7 @@ func cmdServe(argv []string) error {
 			http.Error(w, "id required", http.StatusBadRequest)
 			return
 		}
-		it, err := d.Get(id)
+		it, err := d.GetContext(r.Context(), id)
 		if err != nil {
 			log.Printf("get: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -79,7 +82,6 @@ func cmdServe(argv []string) error {
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
-		BaseContext:       func(net.Listener) context.Context { return context.Background() },
 	}
 	fmt.Printf("folio reading room → http://%s  (localhost only)\n", addr)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

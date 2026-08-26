@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,7 +22,7 @@ func TestScreenshotOCRIsSearchable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ocr := func(path string) (string, error) {
+	ocr := func(ctx context.Context, path string) (string, error) {
 		if path != shot {
 			t.Fatalf("ocr called with %s", path)
 		}
@@ -54,7 +55,7 @@ func TestScreenshotImportSkipsNonImages(t *testing.T) {
 	t.Cleanup(func() { d.Close() })
 
 	os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("not an image"), 0o644)
-	n, err := ImportShots(d, dir, func(string) (string, error) {
+	n, err := ImportShots(d, dir, func(context.Context, string) (string, error) {
 		t.Fatal("ocr must not run on non-images")
 		return "", nil
 	})

@@ -70,7 +70,10 @@ func importWAZip(d *store.DB, path string) (int, error) {
 }
 
 func sanitizeSource(s string) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\r", " ")
-	return s
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, s)
 }

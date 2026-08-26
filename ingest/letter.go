@@ -5,7 +5,6 @@ import (
 	"html"
 	"io"
 	"net/mail"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -63,10 +62,7 @@ func ImportLetter(d *store.DB, r io.Reader, source string) (int, error) {
 }
 
 func isEMLSource(source, s string) bool {
-	ext := strings.ToLower(filepath.Ext(source))
-	if ext == ".eml" {
-		return true
-	}
+	// .eml is a hint, not a hard gate — header sniff decides.
 	head := s
 	if len(head) > 800 {
 		head = head[:800]

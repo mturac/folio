@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,7 +15,7 @@ import (
 
 // OCRFunc extracts text from an image path. Tests inject a fake;
 // production uses BestOCR (tesseract if installed, else filename).
-type OCRFunc func(path string) (string, error)
+type OCRFunc func(ctx context.Context, path string) (string, error)
 
 var imageExt = map[string]bool{
 	".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true, ".heic": true,
@@ -22,7 +23,7 @@ var imageExt = map[string]bool{
 
 // ImportShots walks dir for images and stores OCR text.
 // A failed OCR on one file is reported to stderr and skipped;
-// other files still ingest.
+// other files still ingest. If every image fails, the joined error is returned.
 func ImportShots(d *store.DB, dir string, ocr OCRFunc) (int, error) {
 	if ocr == nil {
 		ocr = BestOCR
@@ -32,7 +33,8 @@ func ImportShots(d *store.DB, dir string, ocr OCRFunc) (int, error) {
 		return 0, err
 	}
 	n := 0
-	var first error
+	var joined error
+	ctx := context.Background()
 	for _, e := range ents {
 		if e.IsDir() {
 			continue
@@ -42,17 +44,16 @@ func ImportShots(d *store.DB, dir string, ocr OCRFunc) (int, error) {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
-		text, err := ocr(path)
+		text, err := ocr(ctx, path)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "folio: OCR failed for %s: %v\n", path, err)
-			if first == nil {
-				first = err
-			}
+			joined = errors.Join(joined, err)
 			continue
 		}
 		body := strings.TrimSpace(text)
 		if body == "" {
-			continue
+			// OCR succeeded but found no text — keep the file findable.
+			body = e.Name()
 		}
 		if _, err := d.Add(store.Item{
 			Kind:   store.KindShot,
@@ -64,8 +65,8 @@ func ImportShots(d *store.DB, dir string, ocr OCRFunc) (int, error) {
 		}
 		n++
 	}
-	if n == 0 && first != nil {
-		return 0, first
+	if n == 0 && joined != nil {
+		return 0, joined
 	}
 	return n, nil
 }
@@ -73,11 +74,11 @@ func ImportShots(d *store.DB, dir string, ocr OCRFunc) (int, error) {
 // BestOCR uses tesseract when on PATH. Missing tesseract is not an
 // error: we index the filename so the file is still findable. A
 // present-but-failing tesseract is an error (no silent filename fake).
-func BestOCR(path string) (string, error) {
+func BestOCR(ctx context.Context, path string) (string, error) {
 	if _, err := exec.LookPath("tesseract"); err != nil {
 		return strings.ReplaceAll(filepath.Base(path), "_", " "), nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "tesseract", path, "stdout", "-l", "eng").Output()
 	if err != nil {

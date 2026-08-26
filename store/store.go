@@ -3,6 +3,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"strings"
 	"time"
@@ -94,8 +95,12 @@ func (d *DB) Add(it Item) (int64, error) {
 }
 
 func (d *DB) Search(q string) ([]Item, error) {
+	return d.SearchContext(context.Background(), q)
+}
+
+func (d *DB) SearchContext(ctx context.Context, q string) ([]Item, error) {
 	safe := sanitizeFTS5(q)
-	rows, err := d.sql.Query(
+	rows, err := d.sql.QueryContext(ctx,
 		`SELECT items.id, items.kind, items.source, items.title, items.body
 		 FROM items_fts JOIN items ON items.id = items_fts.rowid
 		 WHERE items_fts MATCH ? ORDER BY rank LIMIT 50`,
@@ -117,8 +122,12 @@ func (d *DB) Search(q string) ([]Item, error) {
 }
 
 func (d *DB) Get(id int64) (*Item, error) {
+	return d.GetContext(context.Background(), id)
+}
+
+func (d *DB) GetContext(ctx context.Context, id int64) (*Item, error) {
 	var it Item
-	err := d.sql.QueryRow(
+	err := d.sql.QueryRowContext(ctx,
 		`SELECT id, kind, source, title, body FROM items WHERE id=?`, id,
 	).Scan(&it.ID, &it.Kind, &it.Source, &it.Title, &it.Body)
 	if err == sql.ErrNoRows {
@@ -164,8 +173,9 @@ func (d *DB) List(kind string, limit int) ([]Item, error) {
 	return out, rows.Err()
 }
 
-// sanitizeFTS5 quotes each whitespace token so user input cannot be
-// parsed as FTS5 operators (OR, NEAR, unmatched parens).
+// sanitizeFTS5 quotes tokens after stripping FTS5 metacharacters
+// (", *, :, (, ), ^) so column filters, prefix *, NEAR, and unmatched
+// parens cannot be injected. Remaining text is AND-matched as literals.
 func sanitizeFTS5(q string) string {
 	q = strings.TrimSpace(q)
 	if q == "" {
@@ -174,8 +184,20 @@ func sanitizeFTS5(q string) string {
 	fields := strings.Fields(q)
 	parts := make([]string, 0, len(fields))
 	for _, f := range fields {
-		f = strings.ReplaceAll(f, `"`, `""`)
-		parts = append(parts, `"`+f+`"`)
+		cleaned := strings.Map(func(r rune) rune {
+			switch r {
+			case '"', '*', ':', '(', ')', '^':
+				return -1
+			}
+			return r
+		}, f)
+		if cleaned == "" {
+			continue
+		}
+		parts = append(parts, `"`+cleaned+`"`)
+	}
+	if len(parts) == 0 {
+		return `""`
 	}
 	return strings.Join(parts, " ")
 }

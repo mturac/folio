@@ -79,8 +79,8 @@ func cmdIngest(argv []string) error {
 		if e != nil {
 			return e
 		}
+		defer f.Close()
 		n, err = ingest.ImportLetter(d, f, path)
-		f.Close()
 	default:
 		usage()
 		return fmt.Errorf("unknown ingest kind %q", kind)
@@ -145,7 +145,10 @@ func clip(s string, n int) string {
 }
 
 func sanitizeSource(s string) string {
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\r", " ")
-	return s
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, s)
 }

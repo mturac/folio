@@ -46,11 +46,11 @@ func ImportWhatsApp(d *store.DB, r io.Reader, source string) (int, error) {
 			continue
 		}
 		people[name] = struct{}{}
-		fmt.Fprintf(&b, "%s: %s\n", name, text)
-		msgs++
-		if b.Len() > maxChatBody {
+		if b.Len()+len(name)+len(text)+3 > maxChatBody {
 			return 0, fmt.Errorf("chat export %s exceeds %d bytes; split the export", source, maxChatBody)
 		}
+		fmt.Fprintf(&b, "%s: %s\n", name, text)
+		msgs++
 	}
 	if err := sc.Err(); err != nil {
 		return 0, err
