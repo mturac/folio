@@ -1,3 +1,7 @@
-folio
+/folio
 *.db
+*.test
+*.out
+coverage.out
+coverage.html
 .DS_Store

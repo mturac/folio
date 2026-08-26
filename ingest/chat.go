@@ -15,7 +15,10 @@ import (
 
 var (
 	waBracket = regexp.MustCompile(`^\[(\d{1,2}/\d{1,2}/\d{2,4}),?\s+([^\]]+)\]\s+([^:]+):\s*(.*)$`)
-	waDash    = regexp.MustCompile(`^(\d{1,2}/\d{1,2}/\d{2,4}),?\s+(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?)\s+-\s+([^:]+):\s*(.*)$`)
+	// Comma after the date is required (official export format). A
+	// user-authored line like "12/31/23 10:15 - wait: no" is treated
+	// as a continuation, not a new message.
+	waDash = regexp.MustCompile(`^(\d{1,2}/\d{1,2}/\d{2,4}),\s+(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?)\s+-\s+([^:]+):\s*(.*)$`)
 )
 
 // ImportWhatsApp parses an official WhatsApp export and stores it as
@@ -24,6 +27,7 @@ func ImportWhatsApp(d *store.DB, r io.Reader, source string) (int, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
 
+	const maxChatBody = 8 << 20 // 8 MiB — one item per export
 	var b strings.Builder
 	var people = map[string]struct{}{}
 	msgs := 0
@@ -44,6 +48,9 @@ func ImportWhatsApp(d *store.DB, r io.Reader, source string) (int, error) {
 		people[name] = struct{}{}
 		fmt.Fprintf(&b, "%s: %s\n", name, text)
 		msgs++
+		if b.Len() > maxChatBody {
+			return 0, fmt.Errorf("chat export %s exceeds %d bytes; split the export", source, maxChatBody)
+		}
 	}
 	if err := sc.Err(); err != nil {
 		return 0, err

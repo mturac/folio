@@ -4,6 +4,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -31,6 +32,12 @@ func Open(path string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	// One writer at a time; busy_timeout waits instead of SQLITE_BUSY.
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`PRAGMA busy_timeout = 5000`); err != nil {
+		db.Close()
+		return nil, err
+	}
 	schema := `
 CREATE TABLE IF NOT EXISTS items (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,15 +53,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
 CREATE TRIGGER IF NOT EXISTS trg_ai AFTER INSERT ON items BEGIN
 	INSERT INTO items_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
 END;
-CREATE TRIGGER IF NOT EXISTS trg_au AFTER UPDATE ON items BEGIN
-	INSERT INTO items_fts(items_fts, rowid, title, body)
-	VALUES ('delete', old.id, old.title, old.body);
-	INSERT INTO items_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
-END;
-CREATE TRIGGER IF NOT EXISTS trg_ad AFTER DELETE ON items BEGIN
-	INSERT INTO items_fts(items_fts, rowid, title, body)
-	VALUES ('delete', old.id, old.title, old.body);
-END;
 `
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
@@ -63,7 +61,15 @@ END;
 	return &DB{sql: db}, nil
 }
 
-func (d *DB) Close() error { return d.sql.Close() }
+// Close releases the SQLite handle. A second call is a no-op.
+func (d *DB) Close() error {
+	if d.sql == nil {
+		return nil
+	}
+	err := d.sql.Close()
+	d.sql = nil
+	return err
+}
 
 func (d *DB) Add(it Item) (int64, error) {
 	res, err := d.sql.Exec(
@@ -73,27 +79,33 @@ func (d *DB) Add(it Item) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	n, _ := res.RowsAffected()
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
 	if n == 0 {
 		var id int64
-		err := d.sql.QueryRow(`SELECT id FROM items WHERE source=?`, it.Source).Scan(&id)
-		return id, err
+		if err := d.sql.QueryRow(`SELECT id FROM items WHERE source=?`, it.Source).Scan(&id); err != nil {
+			return 0, err
+		}
+		return id, nil
 	}
 	return res.LastInsertId()
 }
 
 func (d *DB) Search(q string) ([]Item, error) {
+	safe := sanitizeFTS5(q)
 	rows, err := d.sql.Query(
 		`SELECT items.id, items.kind, items.source, items.title, items.body
 		 FROM items_fts JOIN items ON items.id = items_fts.rowid
 		 WHERE items_fts MATCH ? ORDER BY rank LIMIT 50`,
-		q,
+		safe,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Item
+	out := make([]Item, 0, 16)
 	for rows.Next() {
 		var it Item
 		if err := rows.Scan(&it.ID, &it.Kind, &it.Source, &it.Title, &it.Body); err != nil {
@@ -102,6 +114,20 @@ func (d *DB) Search(q string) ([]Item, error) {
 		out = append(out, it)
 	}
 	return out, rows.Err()
+}
+
+func (d *DB) Get(id int64) (*Item, error) {
+	var it Item
+	err := d.sql.QueryRow(
+		`SELECT id, kind, source, title, body FROM items WHERE id=?`, id,
+	).Scan(&it.ID, &it.Kind, &it.Source, &it.Title, &it.Body)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &it, nil
 }
 
 func (d *DB) Count() (int, error) {
@@ -120,14 +146,14 @@ func (d *DB) List(kind string, limit int) ([]Item, error) {
 		q += ` WHERE kind=?`
 		args = append(args, kind)
 	}
-	q += ` ORDER BY id DESC LIMIT ?`
+	q += ` ORDER BY saved_at DESC, id DESC LIMIT ?`
 	args = append(args, limit)
 	rows, err := d.sql.Query(q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Item
+	out := make([]Item, 0, 16)
 	for rows.Next() {
 		var it Item
 		if err := rows.Scan(&it.ID, &it.Kind, &it.Source, &it.Title, &it.Body); err != nil {
@@ -136,4 +162,20 @@ func (d *DB) List(kind string, limit int) ([]Item, error) {
 		out = append(out, it)
 	}
 	return out, rows.Err()
+}
+
+// sanitizeFTS5 quotes each whitespace token so user input cannot be
+// parsed as FTS5 operators (OR, NEAR, unmatched parens).
+func sanitizeFTS5(q string) string {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return `""`
+	}
+	fields := strings.Fields(q)
+	parts := make([]string, 0, len(fields))
+	for _, f := range fields {
+		f = strings.ReplaceAll(f, `"`, `""`)
+		parts = append(parts, `"`+f+`"`)
+	}
+	return strings.Join(parts, " ")
 }

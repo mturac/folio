@@ -1,10 +1,13 @@
 package ingest
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/mturac/folio/store"
 )
@@ -18,6 +21,8 @@ var imageExt = map[string]bool{
 }
 
 // ImportShots walks dir for images and stores OCR text.
+// A failed OCR on one file is reported to stderr and skipped;
+// other files still ingest.
 func ImportShots(d *store.DB, dir string, ocr OCRFunc) (int, error) {
 	if ocr == nil {
 		ocr = BestOCR
@@ -27,6 +32,7 @@ func ImportShots(d *store.DB, dir string, ocr OCRFunc) (int, error) {
 		return 0, err
 	}
 	n := 0
+	var first error
 	for _, e := range ents {
 		if e.IsDir() {
 			continue
@@ -38,11 +44,15 @@ func ImportShots(d *store.DB, dir string, ocr OCRFunc) (int, error) {
 		path := filepath.Join(dir, e.Name())
 		text, err := ocr(path)
 		if err != nil {
-			text = ""
+			fmt.Fprintf(os.Stderr, "folio: OCR failed for %s: %v\n", path, err)
+			if first == nil {
+				first = err
+			}
+			continue
 		}
 		body := strings.TrimSpace(text)
 		if body == "" {
-			body = e.Name()
+			continue
 		}
 		if _, err := d.Add(store.Item{
 			Kind:   store.KindShot,
@@ -54,17 +64,24 @@ func ImportShots(d *store.DB, dir string, ocr OCRFunc) (int, error) {
 		}
 		n++
 	}
+	if n == 0 && first != nil {
+		return 0, first
+	}
 	return n, nil
 }
 
-// BestOCR uses tesseract when on PATH, otherwise indexes the filename.
+// BestOCR uses tesseract when on PATH. Missing tesseract is not an
+// error: we index the filename so the file is still findable. A
+// present-but-failing tesseract is an error (no silent filename fake).
 func BestOCR(path string) (string, error) {
 	if _, err := exec.LookPath("tesseract"); err != nil {
 		return strings.ReplaceAll(filepath.Base(path), "_", " "), nil
 	}
-	out, err := exec.Command("tesseract", path, "stdout", "-l", "eng").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "tesseract", path, "stdout", "-l", "eng").Output()
 	if err != nil {
-		return strings.ReplaceAll(filepath.Base(path), "_", " "), nil
+		return "", fmt.Errorf("tesseract failed for %s: %w", path, err)
 	}
 	return string(out), nil
 }

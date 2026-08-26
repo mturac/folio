@@ -12,22 +12,29 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "folio: %v\n", err)
+		os.Exit(1)
 	}
-	switch os.Args[1] {
+}
+
+func run(argv []string) error {
+	if len(argv) < 1 {
+		usage()
+		return fmt.Errorf("usage")
+	}
+	switch argv[0] {
 	case "ingest":
-		cmdIngest(os.Args[2:])
+		return cmdIngest(argv[1:])
 	case "search":
-		cmdSearch(os.Args[2:])
+		return cmdSearch(argv[1:])
 	case "list":
-		cmdList(os.Args[2:])
+		return cmdList(argv[1:])
 	case "serve":
-		cmdServe(os.Args[2:])
+		return cmdServe(argv[1:])
 	default:
 		usage()
-		os.Exit(2)
+		return fmt.Errorf("unknown command %q", argv[0])
 	}
 }
 
@@ -50,25 +57,18 @@ func dbPath() string {
 	return filepath.Join(dir, "folio.db")
 }
 
-func openDB() *store.DB {
-	d, err := store.Open(dbPath())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "folio: %v\n", err)
-		os.Exit(1)
-	}
-	return d
-}
-
-func cmdIngest(argv []string) {
+func cmdIngest(argv []string) error {
 	if len(argv) < 2 {
 		usage()
-		os.Exit(2)
+		return fmt.Errorf("ingest needs kind and path")
 	}
-	d := openDB()
+	d, err := store.Open(dbPath())
+	if err != nil {
+		return err
+	}
 	defer d.Close()
 	kind, path := argv[0], argv[1]
 	var n int
-	var err error
 	switch kind {
 	case "chat":
 		n, err = ingest.ImportWhatsAppPath(d, path)
@@ -77,58 +77,63 @@ func cmdIngest(argv []string) {
 	case "letter":
 		f, e := os.Open(path)
 		if e != nil {
-			fmt.Fprintf(os.Stderr, "folio: %v\n", e)
-			os.Exit(1)
+			return e
 		}
-		defer f.Close()
 		n, err = ingest.ImportLetter(d, f, path)
+		f.Close()
 	default:
 		usage()
-		os.Exit(2)
+		return fmt.Errorf("unknown ingest kind %q", kind)
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "folio: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	fmt.Printf("ingested %d item(s)\n", n)
+	return nil
 }
 
-func cmdSearch(argv []string) {
+func cmdSearch(argv []string) error {
 	if len(argv) < 1 {
 		usage()
-		os.Exit(2)
+		return fmt.Errorf("search needs a query")
 	}
-	d := openDB()
+	d, err := store.Open(dbPath())
+	if err != nil {
+		return err
+	}
 	defer d.Close()
 	hits, err := d.Search(strings.Join(argv, " "))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "folio: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	if len(hits) == 0 {
 		fmt.Println("no matches")
-		return
+		return nil
 	}
 	for _, h := range hits {
 		fmt.Printf("[%s] %s\n  %s\n", h.Kind, h.Title, clip(h.Body, 160))
 	}
+	return nil
 }
 
-func cmdList(argv []string) {
+func cmdList(argv []string) error {
 	kind := ""
 	if len(argv) > 0 {
 		kind = argv[0]
 	}
-	d := openDB()
+	d, err := store.Open(dbPath())
+	if err != nil {
+		return err
+	}
 	defer d.Close()
 	items, err := d.List(kind, 50)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "folio: %v\n", err)
-		os.Exit(1)
+		return err
 	}
 	for _, it := range items {
-		fmt.Printf("[%s] %s  (%s)\n", it.Kind, it.Title, it.Source)
+		fmt.Printf("[%s] %s  (%s)\n", it.Kind, it.Title, sanitizeSource(it.Source))
 	}
+	return nil
 }
 
 func clip(s string, n int) string {
@@ -136,5 +141,11 @@ func clip(s string, n int) string {
 	if len(s) > n {
 		return s[:n] + "…"
 	}
+	return s
+}
+
+func sanitizeSource(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
 	return s
 }

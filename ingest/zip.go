@@ -22,6 +22,15 @@ func ImportWhatsAppPath(d *store.DB, path string) (int, error) {
 	return ImportWhatsApp(d, f, path)
 }
 
+func isOfficialChatTxt(base string) bool {
+	lower := strings.ToLower(base)
+	if lower == "_chat.txt" {
+		return true
+	}
+	// iOS/desktop export: "WhatsApp Chat with Alice.txt"
+	return strings.HasPrefix(lower, "whatsapp chat with ") && strings.HasSuffix(lower, ".txt")
+}
+
 func importWAZip(d *store.DB, path string) (int, error) {
 	zr, err := zip.OpenReader(path)
 	if err != nil {
@@ -29,37 +38,39 @@ func importWAZip(d *store.DB, path string) (int, error) {
 	}
 	defer zr.Close()
 
-	total := 0
-	found := false
+	var hits []*zip.File
 	for _, f := range zr.File {
-		name := f.Name
-		base := name
-		if i := strings.LastIndex(name, "/"); i >= 0 {
-			base = name[i+1:]
+		base := f.Name
+		if i := strings.LastIndex(base, "/"); i >= 0 {
+			base = base[i+1:]
 		}
-		if !strings.HasSuffix(strings.ToLower(base), ".txt") {
-			continue
+		if isOfficialChatTxt(base) {
+			hits = append(hits, f)
 		}
-		if !strings.Contains(strings.ToLower(base), "chat") && base != "_chat.txt" {
-			// WhatsApp names the file "_chat.txt" or "WhatsApp Chat with X.txt"
-			if !strings.Contains(strings.ToLower(name), "whatsapp") {
-				continue
-			}
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return total, err
-		}
-		n, err := ImportWhatsApp(d, rc, path+"#"+name)
-		rc.Close()
-		if err != nil {
-			return total, err
-		}
-		total += n
-		found = true
 	}
-	if !found {
+	if len(hits) == 0 {
 		return 0, fmt.Errorf("no _chat.txt in %s", path)
 	}
-	return total, nil
+	if len(hits) > 1 {
+		return 0, fmt.Errorf("%s contains %d chat exports; import one zip per chat", path, len(hits))
+	}
+
+	f := hits[0]
+	base := f.Name
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	rc, err := f.Open()
+	if err != nil {
+		return 0, err
+	}
+	defer rc.Close()
+	source := path + "#" + sanitizeSource(base)
+	return ImportWhatsApp(d, rc, source)
+}
+
+func sanitizeSource(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	return s
 }

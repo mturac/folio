@@ -1,25 +1,29 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"html"
+	"log"
+	"net"
 	"net/http"
-	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mturac/folio/store"
 )
 
-func cmdServe(argv []string) {
-	addr := ":8787"
-	if len(argv) > 0 {
-		addr = argv[0]
-		if !strings.Contains(addr, ":") {
-			addr = ":" + addr
-		}
+func cmdServe(argv []string) error {
+	addr, err := listenAddr(argv)
+	if err != nil {
+		return err
 	}
-	d := openDB()
+	d, err := store.Open(dbPath())
+	if err != nil {
+		return err
+	}
 	defer d.Close()
 
 	mux := http.NewServeMux()
@@ -29,6 +33,10 @@ func cmdServe(argv []string) {
 	})
 	mux.HandleFunc("/api/search", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
+		if len(q) > 256 {
+			http.Error(w, "query too long", http.StatusRequestURITooLong)
+			return
+		}
 		var items []store.Item
 		var err error
 		if q == "" {
@@ -37,29 +45,70 @@ func cmdServe(argv []string) {
 			items, err = d.Search(q)
 		}
 		if err != nil {
-			http.Error(w, err.Error(), 500)
+			log.Printf("search: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(items)
 	})
 	mux.HandleFunc("/api/item", func(w http.ResponseWriter, r *http.Request) {
-		// list already returns body; this is a cheap HTML view helper
-		q := r.URL.Query().Get("q")
-		items, err := d.Search(q)
-		if err != nil || len(items) == 0 {
+		id, err := strconv.ParseInt(r.URL.Query().Get("id"), 10, 64)
+		if err != nil || id < 1 {
+			http.Error(w, "id required", http.StatusBadRequest)
+			return
+		}
+		it, err := d.Get(id)
+		if err != nil {
+			log.Printf("get: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if it == nil {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, "<pre>%s</pre>", html.EscapeString(items[0].Body))
+		fmt.Fprintf(w, "<pre>%s</pre>", html.EscapeString(it.Body))
 	})
 
-	fmt.Printf("folio reading room → http://127.0.0.1%s  (localhost only)\n", addr)
-	if err := http.ListenAndServe("127.0.0.1"+addr, mux); err != nil {
-		fmt.Fprintf(os.Stderr, "folio: %v\n", err)
-		os.Exit(1)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		BaseContext:       func(net.Listener) context.Context { return context.Background() },
 	}
+	fmt.Printf("folio reading room → http://%s  (localhost only)\n", addr)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
+}
+
+func listenAddr(argv []string) (string, error) {
+	raw := ":8787"
+	if len(argv) > 0 {
+		raw = argv[0]
+	}
+	if !strings.Contains(raw, ":") {
+		raw = "127.0.0.1:" + raw
+	}
+	host, port, err := net.SplitHostPort(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid listen address %q", argv[0])
+	}
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	switch host {
+	case "127.0.0.1", "localhost", "::1":
+	default:
+		return "", fmt.Errorf("refusing to bind to non-loopback host %q", host)
+	}
+	return net.JoinHostPort(host, port), nil
 }
 
 const indexHTML = `<!doctype html>
