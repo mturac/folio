@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 
@@ -18,12 +19,17 @@ const (
 )
 
 type Item struct {
-	ID     int64
-	Kind   string
-	Source string
-	Title  string
-	Body   string
-	When   time.Time
+	ID     int64     `json:"ID"`
+	Kind   string    `json:"Kind"`
+	Source string    `json:"Source"`
+	Title  string    `json:"Title"`
+	Body   string    `json:"Body"`
+	When   time.Time `json:"When"`
+}
+
+type Stats struct {
+	Total  int            `json:"total"`
+	ByKind map[string]int `json:"byKind"`
 }
 
 type DB struct{ sql *sql.DB }
@@ -46,7 +52,8 @@ CREATE TABLE IF NOT EXISTS items (
 	source TEXT NOT NULL UNIQUE,
 	title TEXT NOT NULL DEFAULT '',
 	body TEXT NOT NULL DEFAULT '',
-	saved_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	saved_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	occurred_at DATETIME
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
 	title, body, content='items', content_rowid='id'
@@ -54,12 +61,51 @@ CREATE VIRTUAL TABLE IF NOT EXISTS items_fts USING fts5(
 CREATE TRIGGER IF NOT EXISTS trg_ai AFTER INSERT ON items BEGIN
 	INSERT INTO items_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
 END;
+CREATE TRIGGER IF NOT EXISTS trg_ad AFTER DELETE ON items BEGIN
+	INSERT INTO items_fts(items_fts, rowid, title, body) VALUES('delete', old.id, old.title, old.body);
+END;
+CREATE TRIGGER IF NOT EXISTS trg_au AFTER UPDATE ON items BEGIN
+	INSERT INTO items_fts(items_fts, rowid, title, body) VALUES('delete', old.id, old.title, old.body);
+	INSERT INTO items_fts(rowid, title, body) VALUES (new.id, new.title, new.body);
+END;
 `
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()
 		return nil, err
 	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &DB{sql: db}, nil
+}
+
+func migrate(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(items)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	cols := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			return err
+		}
+		cols[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !cols["occurred_at"] {
+		if _, err := db.Exec(`ALTER TABLE items ADD COLUMN occurred_at DATETIME`); err != nil {
+			return fmt.Errorf("migrate occurred_at: %w", err)
+		}
+	}
+	return nil
 }
 
 // Close releases the SQLite handle. A second call is a no-op.
@@ -74,8 +120,8 @@ func (d *DB) Close() error {
 
 func (d *DB) Add(it Item) (int64, error) {
 	res, err := d.sql.Exec(
-		`INSERT OR IGNORE INTO items (kind, source, title, body) VALUES (?, ?, ?, ?)`,
-		it.Kind, it.Source, it.Title, it.Body,
+		`INSERT OR IGNORE INTO items (kind, source, title, body, occurred_at) VALUES (?, ?, ?, ?, ?)`,
+		it.Kind, it.Source, it.Title, it.Body, nullTime(it.When),
 	)
 	if err != nil {
 		return 0, err
@@ -94,31 +140,68 @@ func (d *DB) Add(it Item) (int64, error) {
 	return res.LastInsertId()
 }
 
-func (d *DB) Search(q string) ([]Item, error) {
-	return d.SearchContext(context.Background(), q)
+// Upsert inserts or replaces by source so re-ingest refreshes body/OCR/title.
+func (d *DB) Upsert(it Item) (int64, error) {
+	res, err := d.sql.Exec(
+		`UPDATE items SET kind=?, title=?, body=?, occurred_at=?, saved_at=CURRENT_TIMESTAMP WHERE source=?`,
+		it.Kind, it.Title, it.Body, nullTime(it.When), it.Source,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if n > 0 {
+		var id int64
+		if err := d.sql.QueryRow(`SELECT id FROM items WHERE source=?`, it.Source).Scan(&id); err != nil {
+			return 0, err
+		}
+		return id, nil
+	}
+	return d.Add(it)
 }
 
-func (d *DB) SearchContext(ctx context.Context, q string) ([]Item, error) {
+func (d *DB) Delete(id int64) (bool, error) {
+	res, err := d.sql.Exec(`DELETE FROM items WHERE id=?`, id)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+func (d *DB) DeleteBySource(source string) (bool, error) {
+	res, err := d.sql.Exec(`DELETE FROM items WHERE source=?`, source)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+func (d *DB) Search(q string) ([]Item, error) {
+	return d.SearchContext(context.Background(), q, "")
+}
+
+func (d *DB) SearchContext(ctx context.Context, q string, kind string) ([]Item, error) {
 	safe := sanitizeFTS5(q)
-	rows, err := d.sql.QueryContext(ctx,
-		`SELECT items.id, items.kind, items.source, items.title, items.body
+	query := `SELECT items.id, items.kind, items.source, items.title, items.body, items.occurred_at
 		 FROM items_fts JOIN items ON items.id = items_fts.rowid
-		 WHERE items_fts MATCH ? ORDER BY rank LIMIT 50`,
-		safe,
-	)
+		 WHERE items_fts MATCH ?`
+	args := []any{safe}
+	if kind != "" {
+		query += ` AND items.kind=?`
+		args = append(args, kind)
+	}
+	query += ` ORDER BY rank LIMIT 50`
+	rows, err := d.sql.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := make([]Item, 0, 16)
-	for rows.Next() {
-		var it Item
-		if err := rows.Scan(&it.ID, &it.Kind, &it.Source, &it.Title, &it.Body); err != nil {
-			return nil, err
-		}
-		out = append(out, it)
-	}
-	return out, rows.Err()
+	return scanItems(rows)
 }
 
 func (d *DB) Get(id int64) (*Item, error) {
@@ -127,15 +210,17 @@ func (d *DB) Get(id int64) (*Item, error) {
 
 func (d *DB) GetContext(ctx context.Context, id int64) (*Item, error) {
 	var it Item
+	var when sql.NullString
 	err := d.sql.QueryRowContext(ctx,
-		`SELECT id, kind, source, title, body FROM items WHERE id=?`, id,
-	).Scan(&it.ID, &it.Kind, &it.Source, &it.Title, &it.Body)
+		`SELECT id, kind, source, title, body, occurred_at FROM items WHERE id=?`, id,
+	).Scan(&it.ID, &it.Kind, &it.Source, &it.Title, &it.Body, &when)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	it.When = parseTime(when)
 	return &it, nil
 }
 
@@ -145,32 +230,80 @@ func (d *DB) Count() (int, error) {
 	return n, err
 }
 
+func (d *DB) Stats() (Stats, error) {
+	s := Stats{ByKind: map[string]int{}}
+	rows, err := d.sql.Query(`SELECT kind, COUNT(*) FROM items GROUP BY kind`)
+	if err != nil {
+		return s, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var kind string
+		var n int
+		if err := rows.Scan(&kind, &n); err != nil {
+			return s, err
+		}
+		s.ByKind[kind] = n
+		s.Total += n
+	}
+	return s, rows.Err()
+}
+
 func (d *DB) List(kind string, limit int) ([]Item, error) {
+	return d.ListContext(context.Background(), kind, limit)
+}
+
+func (d *DB) ListContext(ctx context.Context, kind string, limit int) ([]Item, error) {
 	if limit <= 0 {
 		limit = 50
 	}
-	q := `SELECT id, kind, source, title, body FROM items`
+	q := `SELECT id, kind, source, title, body, occurred_at FROM items`
 	args := []any{}
 	if kind != "" {
 		q += ` WHERE kind=?`
 		args = append(args, kind)
 	}
-	q += ` ORDER BY saved_at DESC, id DESC LIMIT ?`
+	q += ` ORDER BY COALESCE(occurred_at, saved_at) DESC, id DESC LIMIT ?`
 	args = append(args, limit)
-	rows, err := d.sql.Query(q, args...)
+	rows, err := d.sql.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	return scanItems(rows)
+}
+
+func scanItems(rows *sql.Rows) ([]Item, error) {
 	out := make([]Item, 0, 16)
 	for rows.Next() {
 		var it Item
-		if err := rows.Scan(&it.ID, &it.Kind, &it.Source, &it.Title, &it.Body); err != nil {
+		var when sql.NullString
+		if err := rows.Scan(&it.ID, &it.Kind, &it.Source, &it.Title, &it.Body, &when); err != nil {
 			return nil, err
 		}
+		it.When = parseTime(when)
 		out = append(out, it)
 	}
 	return out, rows.Err()
+}
+
+func nullTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+func parseTime(ns sql.NullString) time.Time {
+	if !ns.Valid || ns.String == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02 15:04:05", time.RFC3339Nano} {
+		if t, err := time.Parse(layout, ns.String); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }
 
 // sanitizeFTS5 quotes tokens after stripping FTS5 metacharacters

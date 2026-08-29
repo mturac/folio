@@ -9,6 +9,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/mturac/folio/store"
 )
@@ -31,12 +32,13 @@ func ImportWhatsApp(d *store.DB, r io.Reader, source string) (int, error) {
 	var b strings.Builder
 	var people = map[string]struct{}{}
 	msgs := 0
+	var firstWhen, lastWhen time.Time
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
 			continue
 		}
-		name, text, ok := parseWALine(line)
+		name, text, when, ok := parseWALine(line)
 		if !ok {
 			// continuation of previous message
 			if b.Len() > 0 {
@@ -54,6 +56,14 @@ func ImportWhatsApp(d *store.DB, r io.Reader, source string) (int, error) {
 		}
 		fmt.Fprintf(&b, "%s: %s\n", name, text)
 		msgs++
+		if !when.IsZero() {
+			if firstWhen.IsZero() || when.Before(firstWhen) {
+				firstWhen = when
+			}
+			if lastWhen.IsZero() || when.After(lastWhen) {
+				lastWhen = when
+			}
+		}
 	}
 	if err := sc.Err(); err != nil {
 		return 0, err
@@ -72,12 +82,19 @@ func ImportWhatsApp(d *store.DB, r io.Reader, source string) (int, error) {
 	} else if n > 4 {
 		title = fmt.Sprintf("WhatsApp group (%d people)", n)
 	}
+	title = fmt.Sprintf("%s · %d msgs", title, msgs)
 
-	_, err := d.Add(store.Item{
+	when := lastWhen
+	if when.IsZero() {
+		when = firstWhen
+	}
+
+	_, err := d.Upsert(store.Item{
 		Kind:   store.KindChat,
 		Source: source,
 		Title:  title,
 		Body:   b.String(),
+		When:   when,
 	})
 	if err != nil {
 		return 0, err
@@ -85,12 +102,38 @@ func ImportWhatsApp(d *store.DB, r io.Reader, source string) (int, error) {
 	return 1, nil
 }
 
-func parseWALine(line string) (name, text string, ok bool) {
+func parseWALine(line string) (name, text string, when time.Time, ok bool) {
 	if m := waBracket.FindStringSubmatch(line); len(m) == 5 {
-		return strings.TrimSpace(m[3]), m[4], true
+		return strings.TrimSpace(m[3]), m[4], parseWAStamp(m[1], m[2]), true
 	}
 	if m := waDash.FindStringSubmatch(line); len(m) == 5 {
-		return strings.TrimSpace(m[3]), m[4], true
+		return strings.TrimSpace(m[3]), m[4], parseWAStamp(m[1], m[2]), true
 	}
-	return "", "", false
+	return "", "", time.Time{}, false
+}
+
+func parseWAStamp(date, clock string) time.Time {
+	date = strings.TrimSpace(date)
+	clock = strings.TrimSpace(clock)
+	candidates := []string{
+		"1/2/2006 15:04:05",
+		"1/2/06 15:04:05",
+		"1/2/2006 15:04",
+		"1/2/06 15:04",
+		"1/2/2006 3:04:05 PM",
+		"1/2/06 3:04:05 PM",
+		"1/2/2006 3:04 PM",
+		"1/2/06 3:04 PM",
+		"02/01/2006 15:04:05",
+		"02/01/06 15:04:05",
+		"2/1/2006 15:04:05",
+		"2/1/06 15:04:05",
+	}
+	raw := date + " " + clock
+	for _, layout := range candidates {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
 }

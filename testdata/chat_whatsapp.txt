@@ -1,0 +1,3 @@
+[31/12/2023, 10:15:22] Mehmet: Can you send the boarding pass?
+[31/12/2023, 10:16:01] Ayse: attached boarding-pass.pdf
+[31/12/2023, 10:16:40] Mehmet: thanks — Friday flight is at 07:40

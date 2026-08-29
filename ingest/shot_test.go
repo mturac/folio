@@ -44,6 +44,9 @@ func TestScreenshotOCRIsSearchable(t *testing.T) {
 	if len(hits) != 1 || hits[0].Kind != store.KindShot {
 		t.Fatalf("ocr text must be searchable: %+v", hits)
 	}
+	if hits[0].When.IsZero() {
+		t.Fatal("shot when should come from mtime")
+	}
 }
 
 func TestScreenshotImportSkipsNonImages(t *testing.T) {
@@ -64,5 +67,32 @@ func TestScreenshotImportSkipsNonImages(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("want 0, got %d", n)
+	}
+}
+
+func TestScreenshotImportWalksSubdirs(t *testing.T) {
+	dir := t.TempDir()
+	d, err := store.Open(filepath.Join(dir, "folio.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+
+	nested := filepath.Join(dir, "2024", "trip")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	shot := filepath.Join(nested, "gate.png")
+	if err := os.WriteFile(shot, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	n, err := ImportShots(d, dir, func(_ context.Context, path string) (string, error) {
+		return "gate B12", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("want recursive 1, got %d", n)
 	}
 }
