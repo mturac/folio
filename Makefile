@@ -1,7 +1,7 @@
-.PHONY: test vet build install tidy demo clean
+.PHONY: test vet build install tidy demo clean release-snapshot
 
 PREFIX ?= $(shell go env GOPATH)/bin
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.3.0)
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.5.0)
 LDFLAGS := -X main.version=$(VERSION)
 
 test:
@@ -31,5 +31,9 @@ demo: build
 	HOME=$$tmpdir ./folio search boarding; \
 	rm -rf $$tmpdir
 
+release-snapshot:
+	goreleaser release --snapshot --clean
+
 clean:
 	rm -f folio
+	rm -rf dist

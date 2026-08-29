@@ -1,11 +1,7 @@
-#!/bin/sh
 # Goreleaser builds cross-platform folio binaries for GitHub Releases.
-# Used from v0.5 onward; safe to run locally with: goreleaser release --snapshot --clean
+# Local snapshot: goreleaser release --snapshot --clean
 version: 2
 project_name: folio
-before:
-  hooks:
-    - go test ./...
 builds:
   - id: folio
     main: .
@@ -29,5 +25,18 @@ checksum:
   name_template: checksums.txt
 changelog:
   sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
 release:
-  draft: true
+  draft: false
+  name_template: "folio {{.Tag}}"
+  footer: |
+    ## Install
+
+    ```bash
+    curl -fsSL https://raw.githubusercontent.com/mturac/folio/main/install.sh | bash
+    ```
+
+    Or grab the archive for your OS below, unpack, and put `folio` on your PATH.

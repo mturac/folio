@@ -16,7 +16,9 @@ folio serve --open
 
 Then search in the browser, or drop a file onto the page.
 
-Data stays in `~/.folio/`. Nothing leaves the machine.
+Prebuilt binaries (macOS / Linux / Windows) ship on
+[Releases](https://github.com/mturac/folio/releases). The install script
+prefers a release archive when one exists, otherwise uses `go install`.
 
 ## Install
 
@@ -78,4 +80,4 @@ hand it (or drop into the reading room). See [SECURITY.md](SECURITY.md).
 
 ## Status
 
-v0.4 · heading to **v0.57** public launch · MIT
+v0.5 · heading to **v0.57** public launch · MIT
