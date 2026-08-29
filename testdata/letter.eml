@@ -1,0 +1,17 @@
+From: editor@dispatch.example
+Subject: The Weekly Dispatch #42
+Date: Tue, 31 Dec 2023 09:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="bound42"
+
+--bound42
+Content-Type: text/plain; charset=utf-8
+
+plain fallback
+--bound42
+Content-Type: text/html; charset=utf-8
+
+<html><body><h1>The Weekly Dispatch #42</h1>
+<p>This week: boarding passes still live in screenshots.</p>
+</body></html>
+--bound42--

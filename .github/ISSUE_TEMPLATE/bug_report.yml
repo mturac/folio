@@ -1,0 +1,27 @@
+name: bug_report
+description: Something broken in folio
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Folio is local-first — please include OS and `folio doctor` output when possible.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Steps to reproduce, expected vs actual.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: folio doctor
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: folio version
+    validations:
+      required: true
