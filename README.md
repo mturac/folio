@@ -59,6 +59,7 @@ sudo apt install tesseract-ocr tesseract-ocr-eng tesseract-ocr-tur
 | Add WhatsApp / Telegram | `folio ingest chat <file>` |
 | Add screenshots | `folio ingest shots <folder>` |
 | Add newsletters | `folio ingest letter <file-or-folder>` |
+| Add PDFs | `folio ingest pdf <file-or-folder>` |
 | Open the reading room | `folio serve --open` |
 | Search in the terminal | `folio search "boarding pass"` |
 | Check the install | `folio doctor` |
@@ -69,9 +70,10 @@ sudo apt install tesseract-ocr tesseract-ocr-eng tesseract-ocr-tur
 
 | Kind | Files |
 |------|-------|
-| Chat | WhatsApp `_chat.txt` / zip, Telegram Desktop HTML or `DD.MM.YYYY` text |
+| Chat | WhatsApp `_chat.txt` / zip, Telegram HTML/text, Signal markdown / JSONL |
 | Shots | png / jpg / webp / … (recursive; OCR when tesseract is installed) |
 | Letter | `.html` / `.eml` / `.mbox`, or a folder of them |
+| PDF | `.pdf` (text via `pdftotext` when installed; otherwise filename) |
 
 ## Privacy
 
@@ -80,4 +82,4 @@ hand it (or drop into the reading room). See [SECURITY.md](SECURITY.md).
 
 ## Status
 
-v0.5 · heading to **v0.57** public launch · MIT
+v0.6 · heading to **v0.57** public launch · MIT

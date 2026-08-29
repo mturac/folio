@@ -12,7 +12,7 @@ easier to hold, not broader for its own sake.
 | **0.2** | Library core (ingest / search / reading room) — merged |
 | **0.3** | First-run, install script, drop-to-ingest, `serve --open` — merged |
 | **0.4** | Message-level chat index (long exports stay sharp) — merged |
-| **0.5** | GitHub Release binaries (macOS / Linux / Windows) |
+| **0.5** | GitHub Release binaries (macOS / Linux / Windows) — merged |
 | **0.6–0.15** | Format depth (Signal export, PDF text, richer EML) |
 | **0.16–0.30** | Reading-room polish, TR/EN copy, keyboard flows |
 | **0.31–0.45** | Watch reliability, backup/export UX, doctor depth |

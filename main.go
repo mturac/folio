@@ -18,7 +18,7 @@ import (
 )
 
 // Set by -ldflags "-X main.version=..."
-var version = "0.5.0"
+var version = "0.6.0"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -69,14 +69,15 @@ func usage() {
 
 Start here:
   folio init
-  folio ingest chat <WhatsApp zip or Telegram html>
+  folio ingest chat <WhatsApp|Telegram|Signal export>
   folio ingest shots <folder of screenshots>
   folio ingest letter <eml|html|mbox|folder>
+  folio ingest pdf <file-or-folder>
   folio serve --open
 
 Also:
   folio search <query>           full-text search
-  folio list [chat|shot|letter]  recent items
+  folio list [chat|shot|letter|pdf]  recent items
   folio stats                    library counts
   folio watch <kind> <path>      re-ingest on change
   folio export [json|md]         dump library
@@ -162,8 +163,10 @@ func cmdIngest(argv []string) error {
 		n, err = ingest.ImportShots(d, path, ingest.BestOCR)
 	case "letter":
 		n, err = ingest.ImportLetterPath(d, path)
+	case "pdf":
+		n, err = ingest.ImportPDF(d, path)
 	default:
-		return fmt.Errorf("unknown kind %q (want chat, shots, or letter)", kind)
+		return fmt.Errorf("unknown kind %q (want chat, shots, letter, or pdf)", kind)
 	}
 	if err != nil {
 		return err
@@ -178,7 +181,7 @@ func cmdWatch(argv []string) error {
 	}
 	kind, path := argv[0], argv[1]
 	switch kind {
-	case "chat", "shots", "letter":
+	case "chat", "shots", "letter", "pdf":
 	default:
 		return fmt.Errorf("unknown watch kind %q", kind)
 	}
@@ -267,7 +270,7 @@ func cmdStats() error {
 		return err
 	}
 	fmt.Printf("folio library: %d item(s)\n", s.Total)
-	for _, k := range []string{store.KindChat, store.KindShot, store.KindLetter} {
+	for _, k := range []string{store.KindChat, store.KindShot, store.KindLetter, store.KindPDF} {
 		if n := s.ByKind[k]; n > 0 {
 			fmt.Printf("  %-7s %d\n", k, n)
 		}
