@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- CI moved to Buildkite (`.buildkite/pipeline.yml`); see `docs/buildkite.md`
+
 ## 0.6.0
 
 - Signal chat ingest (markdown + JSONL) via `folio ingest chat`

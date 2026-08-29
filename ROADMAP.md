@@ -24,9 +24,11 @@ Numbers move when the focus ships — empty bumps are not the point.
 ## Now
 
 - [x] Clean history on main (no Cursor authorship / Co-authored-by)
-- [ ] Repo visibility → **public** (owner action — also unlocks free GitHub Actions)
 - [x] Tags `v0.3.0` … `v0.6.0`
-- [ ] Confirm Actions green after public; re-run failed release for `v0.5.0`/`v0.6.0` if needed
+- [ ] Connect Buildkite pipeline to `mturac/folio` (see [docs/buildkite.md](docs/buildkite.md))
+- [ ] First green Buildkite build on `main`
+- [ ] Publish missing release archives for `v0.5.0` / `v0.6.0` via GoReleaser
+- [ ] Repo visibility → **public** (owner action, when ready for OSS)
 
 ## Non-goals
 
