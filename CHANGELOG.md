@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Repository is public; GitHub Actions CI + release workflows are the path of record
+- README refresh with reading-room screenshots; Turkish mirror in `README.tr.md`
 
 ## 0.6.0
 
