@@ -72,7 +72,7 @@ func cmdServe(argv []string) error {
 		}
 		kind := r.URL.Query().Get("kind")
 		switch kind {
-		case "", store.KindChat, store.KindShot, store.KindLetter:
+		case "", store.KindChat, store.KindShot, store.KindLetter, store.KindPDF:
 		default:
 			http.Error(w, "invalid kind", http.StatusBadRequest)
 			return
@@ -238,6 +238,12 @@ func guessIngestKind(name string) string {
 			return "chat"
 		}
 		return "letter"
+	case strings.HasSuffix(lower, ".pdf"):
+		return "pdf"
+	case strings.HasSuffix(lower, ".jsonl"), strings.HasSuffix(lower, ".json"):
+		return "chat"
+	case strings.Contains(lower, "signal"):
+		return "chat"
 	default:
 		return "letter"
 	}
@@ -251,6 +257,8 @@ func ingestDropped(d *store.DB, kind, path string) (int, error) {
 		return ingest.ImportLetterPath(d, path)
 	case "shots", "shot":
 		return ingest.ImportShots(d, filepath.Dir(path), ingest.BestOCR)
+	case "pdf":
+		return ingest.ImportPDF(d, path)
 	default:
 		return 0, fmt.Errorf("unknown kind %q", kind)
 	}
@@ -397,6 +405,7 @@ const indexHTML = `<!doctype html>
       <button type="button" data-kind="chat" aria-pressed="false">chat</button>
       <button type="button" data-kind="shot" aria-pressed="false">shots</button>
       <button type="button" data-kind="letter" aria-pressed="false">letters</button>
+      <button type="button" data-kind="pdf" aria-pressed="false">pdf</button>
     </div>
   </div>
   <div id="out"></div>
@@ -452,6 +461,7 @@ async function loadStats(){
     if (s.byKind?.chat) parts.push(s.byKind.chat + ' chats');
     if (s.byKind?.shot) parts.push(s.byKind.shot + ' shots');
     if (s.byKind?.letter) parts.push(s.byKind.letter + ' letters');
+    if (s.byKind?.pdf) parts.push(s.byKind.pdf + ' pdfs');
     statsEl.textContent = s.total ? (s.total + ' items · ' + parts.join(' · ')) : 'empty library — folio ingest …';
   } catch (_) { statsEl.textContent = ''; }
 }

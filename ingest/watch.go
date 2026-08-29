@@ -123,6 +123,14 @@ func IngestWatchedPath(d *store.DB, kind, path string) (int, error) {
 		}
 		dir := filepath.Dir(path)
 		return ImportShots(d, dir, BestOCR)
+	case "pdf":
+		if info.IsDir() {
+			return ImportPDF(d, path)
+		}
+		if !strings.EqualFold(filepath.Ext(path), ".pdf") {
+			return 0, nil
+		}
+		return ImportPDF(d, path)
 	default:
 		return 0, fmt.Errorf("unknown watch kind %q", kind)
 	}

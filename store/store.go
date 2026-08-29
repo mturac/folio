@@ -16,6 +16,7 @@ const (
 	KindChat   = "chat"
 	KindShot   = "shot"
 	KindLetter = "letter"
+	KindPDF    = "pdf"
 )
 
 type Item struct {

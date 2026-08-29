@@ -19,7 +19,7 @@ var (
 	tgMessage  = regexp.MustCompile(`(?is)<div class="message[^"]*"[^>]*>.*?</div>\s*</div>`)
 )
 
-// ImportChatPath auto-detects WhatsApp vs Telegram exports.
+// ImportChatPath auto-detects WhatsApp vs Telegram vs Signal exports.
 func ImportChatPath(d *store.DB, path string) (int, error) {
 	lower := strings.ToLower(path)
 	if strings.HasSuffix(lower, ".zip") {
@@ -27,6 +27,9 @@ func ImportChatPath(d *store.DB, path string) (int, error) {
 	}
 	if strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".htm") {
 		return ImportTelegramHTMLPath(d, path)
+	}
+	if strings.HasSuffix(lower, ".jsonl") || strings.HasSuffix(lower, ".json") || isSignalNamed(path) {
+		return ImportSignalPath(d, path)
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -38,6 +41,12 @@ func ImportChatPath(d *store.DB, path string) (int, error) {
 		return 0, err
 	}
 	s := string(raw)
+	if looksLikeJSONL(s) {
+		return ImportSignalJSONL(d, strings.NewReader(s), path)
+	}
+	if looksLikeSignalMarkdown(s) {
+		return ImportSignalMarkdown(d, strings.NewReader(s), path)
+	}
 	if looksLikeTelegramText(s) {
 		return ImportTelegramText(d, strings.NewReader(s), path)
 	}

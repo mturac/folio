@@ -30,7 +30,7 @@ func cmdDoctor() error {
 			return err
 		}
 		fmt.Printf("items: %d", s.Total)
-		for _, k := range []string{store.KindChat, store.KindShot, store.KindLetter} {
+		for _, k := range []string{store.KindChat, store.KindShot, store.KindLetter, store.KindPDF} {
 			if n := s.ByKind[k]; n > 0 {
 				fmt.Printf("  %s=%d", k, n)
 			}
@@ -49,6 +49,12 @@ func cmdDoctor() error {
 			hasTur := containsWord(langs, "tur")
 			fmt.Printf("langs: eng=%v tur=%v\n", hasEng, hasTur)
 		}
+	}
+
+	if p, err := exec.LookPath("pdftotext"); err != nil {
+		fmt.Println("pdf:   pdftotext not found — pdf filenames still indexed")
+	} else {
+		fmt.Printf("pdf:   %s\n", p)
 	}
 
 	home, _ := os.UserHomeDir()

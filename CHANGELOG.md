@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- Signal chat ingest (markdown + JSONL) via `folio ingest chat`
+- PDF ingest (`folio ingest pdf`) using pdftotext when available
+- Reading room pdf filter; doctor reports pdftotext
+
 ## 0.5.0
 
 - GitHub Actions + GoReleaser publish linux/darwin/windows binaries on `v*` tags
