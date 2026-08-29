@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0
+
+- Message-level chat index: each WhatsApp/Telegram message is its own FTS row
+- Thread summary kept for lists/stats; re-ingest replaces `#m*` children cleanly
+- Reading room labels message hits as `chat · msg`
+
 ## 0.3.0
 
 - First-run welcome (`folio` with no args), `folio init`, `folio help`

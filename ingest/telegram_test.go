@@ -19,18 +19,24 @@ func TestTelegramHTMLExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
+	if n != 2 {
 		t.Fatalf("n=%d", n)
 	}
-	hits, err := d.Search("boarding")
-	if err != nil || len(hits) != 1 {
+	hits, err := d.Search("B12")
+	if err != nil || len(hits) < 1 {
 		t.Fatalf("hits=%d err=%v", len(hits), err)
 	}
-	if !strings.Contains(hits[0].Body, "B12") {
-		t.Fatalf("body=%q", hits[0].Body)
+	found := false
+	for _, h := range hits {
+		if store.IsMsgSource(h.Source) && strings.Contains(h.Body, "B12") {
+			found = true
+			if h.When.IsZero() {
+				t.Fatal("expected when from title attr")
+			}
+		}
 	}
-	if hits[0].When.IsZero() {
-		t.Fatal("expected when from title attr")
+	if !found {
+		t.Fatalf("expected message hit: %+v", hits)
 	}
 }
 
@@ -45,11 +51,11 @@ func TestTelegramTextExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
+	if n != 2 {
 		t.Fatalf("n=%d", n)
 	}
 	hits, _ := d.Search("boarding")
-	if len(hits) != 1 {
+	if len(hits) < 1 {
 		t.Fatalf("hits=%d", len(hits))
 	}
 }
@@ -64,7 +70,7 @@ func TestChatPathWhatsAppFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 {
+	if n != 3 {
 		t.Fatalf("n=%d", n)
 	}
 }

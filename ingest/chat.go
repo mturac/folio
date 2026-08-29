@@ -22,17 +22,21 @@ var (
 	waDash = regexp.MustCompile(`^(\d{1,2}/\d{1,2}/\d{2,4}),\s+(\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AP]M)?)\s+-\s+([^:]+):\s*(.*)$`)
 )
 
-// ImportWhatsApp parses an official WhatsApp export and stores it as
-// one searchable chat item (source = the export path the user gave).
+const maxChatMessages = 200000
+
+type chatLine struct {
+	name string
+	text string
+	when time.Time
+}
+
+// ImportWhatsApp parses an official WhatsApp export into one thread
+// summary plus one searchable row per message.
 func ImportWhatsApp(d *store.DB, r io.Reader, source string) (int, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
 
-	const maxChatBody = 8 << 20 // 8 MiB — one item per export
-	var b strings.Builder
-	var people = map[string]struct{}{}
-	msgs := 0
-	var firstWhen, lastWhen time.Time
+	var lines []chatLine
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" {
@@ -40,39 +44,54 @@ func ImportWhatsApp(d *store.DB, r io.Reader, source string) (int, error) {
 		}
 		name, text, when, ok := parseWALine(line)
 		if !ok {
-			// continuation of previous message
-			if b.Len() > 0 {
-				if b.Len()+1+len(line) > maxChatBody {
-					return 0, fmt.Errorf("chat export %s exceeds %d bytes; split the export", source, maxChatBody)
-				}
-				b.WriteByte('\n')
-				b.WriteString(line)
+			if len(lines) == 0 {
+				continue
 			}
+			prev := &lines[len(lines)-1]
+			if len(prev.text)+1+len(line) > 64<<10 {
+				continue
+			}
+			prev.text += "\n" + line
 			continue
 		}
-		people[name] = struct{}{}
-		if b.Len()+len(name)+len(text)+3 > maxChatBody {
-			return 0, fmt.Errorf("chat export %s exceeds %d bytes; split the export", source, maxChatBody)
+		if len(lines) >= maxChatMessages {
+			return 0, fmt.Errorf("chat export %s exceeds %d messages; split the export", source, maxChatMessages)
 		}
-		fmt.Fprintf(&b, "%s: %s\n", name, text)
-		msgs++
-		if !when.IsZero() {
-			if firstWhen.IsZero() || when.Before(firstWhen) {
-				firstWhen = when
-			}
-			if lastWhen.IsZero() || when.After(lastWhen) {
-				lastWhen = when
-			}
-		}
+		lines = append(lines, chatLine{name: name, text: text, when: when})
 	}
 	if err := sc.Err(); err != nil {
 		return 0, err
 	}
-	if msgs == 0 {
+	if len(lines) == 0 {
 		return 0, fmt.Errorf("no WhatsApp messages in %s", source)
 	}
+	return storeChatLines(d, source, "WhatsApp", lines)
+}
 
-	title := "WhatsApp export"
+func storeChatLines(d *store.DB, source, brand string, lines []chatLine) (int, error) {
+	people := map[string]struct{}{}
+	var firstWhen, lastWhen time.Time
+	msgs := make([]store.Item, 0, len(lines))
+	for i, ln := range lines {
+		people[ln.name] = struct{}{}
+		if !ln.when.IsZero() {
+			if firstWhen.IsZero() || ln.when.Before(firstWhen) {
+				firstWhen = ln.when
+			}
+			if lastWhen.IsZero() || ln.when.After(lastWhen) {
+				lastWhen = ln.when
+			}
+		}
+		msgs = append(msgs, store.Item{
+			Kind:   store.KindChat,
+			Source: store.MsgSource(source, i+1),
+			Title:  ln.name,
+			Body:   ln.text,
+			When:   ln.when,
+		})
+	}
+
+	title := brand + " export"
 	if n := len(people); n > 0 && n <= 4 {
 		var names []string
 		for p := range people {
@@ -80,26 +99,26 @@ func ImportWhatsApp(d *store.DB, r io.Reader, source string) (int, error) {
 		}
 		title = strings.Join(names, ", ")
 	} else if n > 4 {
-		title = fmt.Sprintf("WhatsApp group (%d people)", n)
+		title = fmt.Sprintf("%s group (%d people)", brand, n)
 	}
-	title = fmt.Sprintf("%s · %d msgs", title, msgs)
+	title = fmt.Sprintf("%s · %d msgs", title, len(lines))
 
 	when := lastWhen
 	if when.IsZero() {
 		when = firstWhen
 	}
 
-	_, err := d.Upsert(store.Item{
+	n, err := d.ReplaceChat(store.Item{
 		Kind:   store.KindChat,
 		Source: source,
 		Title:  title,
-		Body:   b.String(),
+		Body:   "", // per-message rows carry FTS text; thread is for list/stats
 		When:   when,
-	})
+	}, msgs)
 	if err != nil {
 		return 0, err
 	}
-	return 1, nil
+	return n, nil
 }
 
 func parseWALine(line string) (name, text string, when time.Time, ok bool) {

@@ -181,6 +181,72 @@ func (d *DB) DeleteBySource(source string) (bool, error) {
 	return n > 0, err
 }
 
+// MsgSource builds a per-message source id under a chat thread export path.
+func MsgSource(thread string, seq int) string {
+	return fmt.Sprintf("%s#m%06d", thread, seq)
+}
+
+// IsMsgSource reports whether source is a per-message chat row.
+func IsMsgSource(source string) bool {
+	_, _, ok := SplitMsgSource(source)
+	return ok
+}
+
+// SplitMsgSource returns thread path and 1-based seq for path#m000001.
+func SplitMsgSource(source string) (thread string, seq int, ok bool) {
+	i := strings.LastIndex(source, "#m")
+	if i < 0 || i+2 >= len(source) {
+		return "", 0, false
+	}
+	num := source[i+2:]
+	if len(num) == 0 {
+		return "", 0, false
+	}
+	for _, r := range num {
+		if r < '0' || r > '9' {
+			return "", 0, false
+		}
+	}
+	var n int
+	fmt.Sscanf(num, "%d", &n)
+	if n < 1 {
+		return "", 0, false
+	}
+	return source[:i], n, true
+}
+
+// ReplaceChat deletes a thread and its #m* messages, then inserts the
+// thread summary plus each message. Returns the number of message rows.
+func (d *DB) ReplaceChat(thread Item, msgs []Item) (int, error) {
+	tx, err := d.sql.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`DELETE FROM items WHERE source=? OR source LIKE ?`, thread.Source, thread.Source+"#m%"); err != nil {
+		return 0, err
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO items (kind, source, title, body, occurred_at) VALUES (?, ?, ?, ?, ?)`,
+		thread.Kind, thread.Source, thread.Title, thread.Body, nullTime(thread.When),
+	); err != nil {
+		return 0, err
+	}
+	for _, m := range msgs {
+		if _, err := tx.Exec(
+			`INSERT INTO items (kind, source, title, body, occurred_at) VALUES (?, ?, ?, ?, ?)`,
+			m.Kind, m.Source, m.Title, m.Body, nullTime(m.When),
+		); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(msgs), nil
+}
+
 func (d *DB) Search(q string) ([]Item, error) {
 	return d.SearchContext(context.Background(), q, "")
 }
@@ -232,7 +298,11 @@ func (d *DB) Count() (int, error) {
 
 func (d *DB) Stats() (Stats, error) {
 	s := Stats{ByKind: map[string]int{}}
-	rows, err := d.sql.Query(`SELECT kind, COUNT(*) FROM items GROUP BY kind`)
+	// Chat stats count threads only; per-message rows stay searchable.
+	rows, err := d.sql.Query(`
+		SELECT kind, COUNT(*) FROM items
+		WHERE source NOT LIKE '%#m%'
+		GROUP BY kind`)
 	if err != nil {
 		return s, err
 	}
@@ -257,10 +327,10 @@ func (d *DB) ListContext(ctx context.Context, kind string, limit int) ([]Item, e
 	if limit <= 0 {
 		limit = 50
 	}
-	q := `SELECT id, kind, source, title, body, occurred_at FROM items`
+	q := `SELECT id, kind, source, title, body, occurred_at FROM items WHERE source NOT LIKE '%#m%'`
 	args := []any{}
 	if kind != "" {
-		q += ` WHERE kind=?`
+		q += ` AND kind=?`
 		args = append(args, kind)
 	}
 	q += ` ORDER BY COALESCE(occurred_at, saved_at) DESC, id DESC LIMIT ?`

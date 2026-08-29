@@ -26,8 +26,8 @@ func TestWhatsAppExportBecomesSearchableChat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import: %v", err)
 	}
-	if n < 1 {
-		t.Fatalf("want at least 1 item, got %d", n)
+	if n != 3 {
+		t.Fatalf("want 3 messages, got %d", n)
 	}
 
 	hits, err := d.Search("boarding")
@@ -37,17 +37,27 @@ func TestWhatsAppExportBecomesSearchableChat(t *testing.T) {
 	if len(hits) == 0 {
 		t.Fatal("imported chat must be searchable for 'boarding'")
 	}
-	if hits[0].Kind != store.KindChat {
-		t.Fatalf("kind=%s, want chat", hits[0].Kind)
+	// Prefer a per-message hit with speaker title.
+	foundMsg := false
+	for _, h := range hits {
+		if store.IsMsgSource(h.Source) && h.Title == "Mehmet" && strings.Contains(h.Body, "boarding") {
+			foundMsg = true
+			if h.When.IsZero() || h.When.Year() != 2023 {
+				t.Fatalf("message when=%v", h.When)
+			}
+			break
+		}
 	}
-	if !strings.Contains(hits[0].Title, "3 msgs") {
-		t.Fatalf("title should include message count: %q", hits[0].Title)
+	if !foundMsg {
+		t.Fatalf("expected per-message hit, got %+v", hits)
 	}
-	if hits[0].When.IsZero() {
-		t.Fatal("chat when should be parsed from stamps")
+
+	s, err := d.Stats()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if hits[0].When.Year() != 2023 {
-		t.Fatalf("when year=%d", hits[0].When.Year())
+	if s.ByKind[store.KindChat] != 1 {
+		t.Fatalf("stats should count 1 thread, got %d", s.ByKind[store.KindChat])
 	}
 }
 
@@ -63,20 +73,23 @@ func TestWhatsAppReingestUpdatesBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	updated := whatsappExport + "[31/12/2023, 11:00:00] Mehmet: gate changed to B12\n"
-	_, err = ImportWhatsApp(d, strings.NewReader(updated), "family/_chat.txt")
+	n, err := ImportWhatsApp(d, strings.NewReader(updated), "family/_chat.txt")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if n != 4 {
+		t.Fatalf("want 4 messages after reingest, got %d", n)
 	}
 	hits, err := d.Search("B12")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(hits) != 1 {
-		t.Fatalf("reingest must refresh FTS, got %d", len(hits))
+	if len(hits) < 1 {
+		t.Fatal("reingest must refresh FTS")
 	}
-	n, _ := d.Count()
-	if n != 1 {
-		t.Fatalf("reingest must not duplicate, got %d", n)
+	total, _ := d.Count()
+	if total != 5 { // 1 thread + 4 messages
+		t.Fatalf("want 5 rows, got %d", total)
 	}
 }
 
@@ -86,7 +99,6 @@ func TestParseWAStamp(t *testing.T) {
 		t.Fatal("expected parsed time")
 	}
 	if got.Month() != time.December && got.Day() != 31 {
-		// either DMY or MDY parse is acceptable if consistent; fixture is DMY
 		t.Logf("parsed=%v", got)
 	}
 }
