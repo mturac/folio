@@ -26,8 +26,8 @@ Numbers move when the focus ships — empty bumps are not the point.
 - [x] Clean history on main (no Cursor authorship / Co-authored-by)
 - [x] Tags `v0.3.0` … `v0.6.0`
 - [x] Repo visibility → **public**
-- [ ] Confirm GitHub Actions green on `main`
-- [ ] Re-run release workflow for `v0.5.0` / `v0.6.0` so binaries land on Releases
+- [x] GitHub Actions green on `main`
+- [x] Release archives for `v0.5.0` / `v0.6.0` on GitHub Releases
 
 ## Non-goals
 
