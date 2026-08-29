@@ -1,7 +1,7 @@
 .PHONY: test vet build install tidy demo clean
 
 PREFIX ?= $(shell go env GOPATH)/bin
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.3.0)
 LDFLAGS := -X main.version=$(VERSION)
 
 test:
@@ -12,15 +12,18 @@ vet:
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o folio .
+	chmod +x install.sh
 
 install:
 	go install -ldflags "$(LDFLAGS)" .
+	chmod +x install.sh
 
 tidy:
 	go mod tidy
 
 demo: build
 	@tmpdir=$$(mktemp -d); \
+	HOME=$$tmpdir ./folio init; \
 	HOME=$$tmpdir ./folio ingest chat testdata/chat_whatsapp.txt; \
 	HOME=$$tmpdir ./folio ingest chat testdata/chat_telegram.html; \
 	HOME=$$tmpdir ./folio ingest letter testdata/letter.eml; \

@@ -2,42 +2,45 @@
 
 > Chats. Screenshots. Newsletters. Searchable. On your disk.
 
-A single-binary local library. WhatsApp gave you a zip. Your phone gave you
-10,000 screenshots. Substack gave you an inbox. folio makes them findable
-without an account, a cloud, or Docker.
+No account. No cloud. One binary.
 
-```
-go install github.com/mturac/folio@latest
+## 60 seconds
 
-folio ingest chat  WhatsApp\ Chat.zip
-folio ingest chat  telegram-export.html
+```bash
+curl -fsSL https://raw.githubusercontent.com/mturac/folio/main/install.sh | bash
+folio init
+folio ingest chat ~/Downloads/WhatsApp\ Chat.zip
 folio ingest shots ~/Desktop/Screenshots
-folio ingest letter weekly-dispatch.eml
-folio search "boarding pass"
-folio stats
-folio serve
+folio serve --open
 ```
 
-Data lives at `~/.folio/folio.db`. Nothing leaves the machine.
+Then search in the browser, or drop a file onto the page.
+
+Data stays in `~/.folio/`. Nothing leaves the machine.
 
 ## Install
 
-**Requires Go 1.22+.**
+**Script (macOS / Linux):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mturac/folio/main/install.sh | bash
+```
+
+**Go:**
 
 ```bash
 go install github.com/mturac/folio@latest
 ```
 
-Or from a clone:
+**From source:**
 
 ```bash
 git clone https://github.com/mturac/folio
 cd folio && make install
 ```
 
-Optional: install [Tesseract](https://tesseract-ocr.github.io/) for screenshot OCR.
-Without it, filenames are still indexed. `eng+tur` is preferred when both
-traineddata packs are present.
+Optional OCR for screenshots — [Tesseract](https://tesseract-ocr.github.io/).
+Without it, filenames are still indexed.
 
 ```bash
 # macOS
@@ -46,32 +49,33 @@ brew install tesseract tesseract-lang
 sudo apt install tesseract-ocr tesseract-ocr-eng tesseract-ocr-tur
 ```
 
-## What it ingests
+## Commands
 
-| Kind | Command | Accepts |
-|------|---------|---------|
-| **Chat** | `folio ingest chat <path>` | WhatsApp `_chat.txt` / zip, Telegram Desktop HTML or `DD.MM.YYYY` text |
-| **Shots** | `folio ingest shots <dir>` | png/jpg/webp/… recursively; re-ingest refreshes OCR |
-| **Letter** | `folio ingest letter <path>` | `.html` / `.eml` / `.mbox`, or a folder of them |
+| Do this | Type this |
+|---------|-----------|
+| First-time setup | `folio init` |
+| Add WhatsApp / Telegram | `folio ingest chat <file>` |
+| Add screenshots | `folio ingest shots <folder>` |
+| Add newsletters | `folio ingest letter <file-or-folder>` |
+| Open the reading room | `folio serve --open` |
+| Search in the terminal | `folio search "boarding pass"` |
+| Check the install | `folio doctor` |
 
-```
-folio watch shots ~/Desktop/Screenshots   # re-ingest on change (poll)
-folio export md > library.md
-folio doctor
-folio rm 42                               # or folio rm /path/to/source
-folio version
-```
+`folio` with no arguments prints the next step for an empty or full library.
 
-## Reading room
+## What it accepts
 
-`folio serve` opens a localhost-only UI: live search, kind filters, detail
-sheet, and inline screenshot images. Bind refuses anything but loopback.
+| Kind | Files |
+|------|-------|
+| Chat | WhatsApp `_chat.txt` / zip, Telegram Desktop HTML or `DD.MM.YYYY` text |
+| Shots | png / jpg / webp / … (recursive; OCR when tesseract is installed) |
+| Letter | `.html` / `.eml` / `.mbox`, or a folder of them |
 
 ## Privacy
 
-No telemetry. No accounts. Bind is localhost-only. Folio is the opposite of
-Rewind: it only sees files you hand it. See [SECURITY.md](SECURITY.md).
+No telemetry. `folio serve` binds localhost only. Folio only sees files you
+hand it (or drop into the reading room). See [SECURITY.md](SECURITY.md).
 
 ## Status
 
-v0.2 · MIT · built to stay small.
+v0.3 · heading to **v0.57** public launch · MIT
