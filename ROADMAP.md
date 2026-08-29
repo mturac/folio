@@ -25,10 +25,9 @@ Numbers move when the focus ships — empty bumps are not the point.
 
 - [x] Clean history on main (no Cursor authorship / Co-authored-by)
 - [x] Tags `v0.3.0` … `v0.6.0`
-- [ ] Connect Buildkite pipeline to `mturac/folio` (see [docs/buildkite.md](docs/buildkite.md))
-- [ ] First green Buildkite build on `main`
-- [ ] Publish missing release archives for `v0.5.0` / `v0.6.0` via GoReleaser
-- [ ] Repo visibility → **public** (owner action, when ready for OSS)
+- [x] Repo visibility → **public**
+- [ ] Confirm GitHub Actions green on `main`
+- [ ] Re-run release workflow for `v0.5.0` / `v0.6.0` so binaries land on Releases
 
 ## Non-goals
 

@@ -1,8 +1,3 @@
-# Optional GitHub Actions release path for `v*` tags.
-# Primary CI is Buildkite — see docs/buildkite.md.
-# This workflow only helps when Actions is available for the repo;
-# otherwise publish with: goreleaser release --clean
-
 name: release
 
 on:
