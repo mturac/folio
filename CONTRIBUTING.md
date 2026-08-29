@@ -26,8 +26,7 @@ go run . serve
 
 ## CI
 
-Pull requests are checked on **Buildkite** (`test` / `vet` / `build`).
-Setup notes: [docs/buildkite.md](docs/buildkite.md).
+Pull requests run `go test` / `go vet` on GitHub Actions (`.github/workflows/ci.yml`).
 
 ## PR checklist
 
