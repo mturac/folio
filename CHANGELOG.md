@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- CI moved to Buildkite (`.buildkite/pipeline.yml`); see `docs/buildkite.md`
+- Repository is public; GitHub Actions CI + release workflows are the path of record
 
 ## 0.6.0
 
