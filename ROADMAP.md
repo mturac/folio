@@ -10,7 +10,7 @@ easier to hold, not broader for its own sake.
 | Tag | Focus |
 |-----|--------|
 | **0.2** | Library core (ingest / search / reading room) — merged |
-| **0.3** | First-run, install script, drop-to-ingest, `serve --open` |
+| **0.3** | First-run, install script, drop-to-ingest, `serve --open` — merged |
 | **0.4** | Message-level chat index (long exports stay sharp) |
 | **0.5** | GitHub Release binaries (macOS / Linux / Windows) |
 | **0.6–0.15** | Format depth (Signal export, PDF text, richer EML) |
@@ -25,7 +25,8 @@ Numbers move when the focus ships — empty bumps are not the point.
 
 - [x] Clean history on main (no Cursor authorship / Co-authored-by)
 - [ ] Repo visibility → public (owner action)
-- [ ] Tag `v0.3.0` after this branch merges
+- [x] Tag `v0.3.0`
+- [ ] Tag `v0.4.0` after message-index merges
 - [ ] Goreleaser for `v0.5.0`
 
 ## Non-goals

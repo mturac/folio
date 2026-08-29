@@ -33,10 +33,16 @@ func TestWhatsAppZipFindsChatTxt(t *testing.T) {
 		t.Fatalf("import zip: %v", err)
 	}
 	if n != 1 {
-		t.Fatalf("want 1, got %d", n)
+		t.Fatalf("want 1 message, got %d", n)
 	}
 	hits, _ := d.Search("hunter2")
-	if len(hits) != 1 {
-		t.Fatalf("zip chat must be searchable, got %d", len(hits))
+	found := false
+	for _, h := range hits {
+		if store.IsMsgSource(h.Source) && h.Body == "the Wi-Fi password is hunter2" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("zip chat must be searchable, got %+v", hits)
 	}
 }

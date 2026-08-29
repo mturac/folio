@@ -50,10 +50,14 @@ func TestZipIgnoresUnrelatedChatNamedFiles(t *testing.T) {
 		t.Fatalf("import zip: %v", err)
 	}
 	if n != 1 {
-		t.Fatalf("want exactly 1 chat item, got %d", n)
+		t.Fatalf("want exactly 1 message, got %d", n)
 	}
 	c, _ := d.Count()
-	if c != 1 {
+	if c != 2 { // thread + one message
 		t.Fatalf("unrelated notes_about_chat.txt must not be ingested, count=%d", c)
+	}
+	s, _ := d.Stats()
+	if s.ByKind[store.KindChat] != 1 {
+		t.Fatalf("want 1 chat thread in stats, got %d", s.ByKind[store.KindChat])
 	}
 }

@@ -463,12 +463,15 @@ async function run() {
     out.innerHTML = '<p class="empty">nothing here yet — folio ingest chat|shots|letter …</p>';
     return;
   }
-  out.innerHTML = items.map((it, i) =>
-    '<button class="hit" type="button" data-i="'+i+'"><div class="meta"><span class="kind">'+
-    escapeHtml(it.Kind||'')+'</span><span class="when">'+escapeHtml(fmtWhen(it.When))+
-    '</span></div><div class="title">'+highlight(it.Title||'')+
-    '</div><div class="body">'+highlight((it.Body||'').slice(0, 280))+'</div></button>'
-  ).join('');
+  out.innerHTML = items.map((it, i) => {
+    const isMsg = /#m\d+$/.test(it.Source||'');
+    const kindLabel = isMsg ? 'chat · msg' : (it.Kind||'');
+    const title = isMsg ? (it.Title||'') : (it.Title||'');
+    return '<button class="hit" type="button" data-i="'+i+'"><div class="meta"><span class="kind">'+
+    escapeHtml(kindLabel)+'</span><span class="when">'+escapeHtml(fmtWhen(it.When))+
+    '</span></div><div class="title">'+highlight(title)+
+    '</div><div class="body">'+highlight((it.Body||'').slice(0, 280))+'</div></button>';
+  }).join('');
 }
 function openItem(it){
   document.getElementById('dKind').textContent = it.Kind || '';

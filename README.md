@@ -78,4 +78,4 @@ hand it (or drop into the reading room). See [SECURITY.md](SECURITY.md).
 
 ## Status
 
-v0.3 · heading to **v0.57** public launch · MIT
+v0.4 · heading to **v0.57** public launch · MIT

@@ -69,10 +69,7 @@ func ImportTelegramText(d *store.DB, r io.Reader, source string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	var b strings.Builder
-	people := map[string]struct{}{}
-	msgs := 0
-	var firstWhen, lastWhen time.Time
+	var lines []chatLine
 	for _, line := range strings.Split(string(raw), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -80,30 +77,22 @@ func ImportTelegramText(d *store.DB, r io.Reader, source string) (int, error) {
 		}
 		m := tgTextLine.FindStringSubmatch(line)
 		if m == nil {
-			if b.Len() > 0 {
-				b.WriteByte('\n')
-				b.WriteString(line)
+			if len(lines) > 0 {
+				prev := &lines[len(lines)-1]
+				prev.text += "\n" + line
 			}
 			continue
 		}
-		name, text := strings.TrimSpace(m[3]), m[4]
-		people[name] = struct{}{}
-		fmt.Fprintf(&b, "%s: %s\n", name, text)
-		msgs++
-		when := parseTGStamp(m[1], m[2])
-		if !when.IsZero() {
-			if firstWhen.IsZero() || when.Before(firstWhen) {
-				firstWhen = when
-			}
-			if lastWhen.IsZero() || when.After(lastWhen) {
-				lastWhen = when
-			}
-		}
+		lines = append(lines, chatLine{
+			name: strings.TrimSpace(m[3]),
+			text: m[4],
+			when: parseTGStamp(m[1], m[2]),
+		})
 	}
-	if msgs == 0 {
+	if len(lines) == 0 {
 		return 0, fmt.Errorf("no Telegram messages in %s", source)
 	}
-	return storeChat(d, source, "Telegram", people, msgs, b.String(), lastWhen, firstWhen)
+	return storeChatLines(d, source, "Telegram", lines)
 }
 
 // ImportTelegramHTMLPath reads a Telegram Desktop HTML export.
@@ -124,13 +113,9 @@ func ImportTelegramHTML(d *store.DB, r io.Reader, source string) (int, error) {
 	htmlSrc := string(raw)
 	blocks := tgMessage.FindAllString(htmlSrc, -1)
 	if len(blocks) == 0 {
-		// fallback: looser scan by from_name + text pairs in document order
 		return importTelegramHTMLLoose(d, htmlSrc, source)
 	}
-	var b strings.Builder
-	people := map[string]struct{}{}
-	msgs := 0
-	var firstWhen, lastWhen time.Time
+	var lines []chatLine
 	for _, block := range blocks {
 		name := ""
 		if m := tgFromName.FindStringSubmatch(block); len(m) == 2 {
@@ -143,25 +128,16 @@ func ImportTelegramHTML(d *store.DB, r io.Reader, source string) (int, error) {
 		if name == "" || text == "" {
 			continue
 		}
-		people[name] = struct{}{}
-		fmt.Fprintf(&b, "%s: %s\n", name, text)
-		msgs++
+		when := time.Time{}
 		if m := tgDate.FindStringSubmatch(block); len(m) == 2 {
-			when := parseTGTitleDate(m[1])
-			if !when.IsZero() {
-				if firstWhen.IsZero() || when.Before(firstWhen) {
-					firstWhen = when
-				}
-				if lastWhen.IsZero() || when.After(lastWhen) {
-					lastWhen = when
-				}
-			}
+			when = parseTGTitleDate(m[1])
 		}
+		lines = append(lines, chatLine{name: name, text: text, when: when})
 	}
-	if msgs == 0 {
+	if len(lines) == 0 {
 		return 0, fmt.Errorf("no Telegram HTML messages in %s", source)
 	}
-	return storeChat(d, source, "Telegram", people, msgs, b.String(), lastWhen, firstWhen)
+	return storeChatLines(d, source, "Telegram", lines)
 }
 
 func importTelegramHTMLLoose(d *store.DB, htmlSrc, source string) (int, error) {
@@ -174,49 +150,19 @@ func importTelegramHTMLLoose(d *store.DB, htmlSrc, source string) (int, error) {
 	if len(texts) < n {
 		n = len(texts)
 	}
-	var b strings.Builder
-	people := map[string]struct{}{}
+	var lines []chatLine
 	for i := 0; i < n; i++ {
 		name := strings.TrimSpace(htmlUnescapeLite(stripTags(names[i][1])))
 		text := strings.TrimSpace(letterPlain(texts[i][1]))
 		if name == "" || text == "" {
 			continue
 		}
-		people[name] = struct{}{}
-		fmt.Fprintf(&b, "%s: %s\n", name, text)
+		lines = append(lines, chatLine{name: name, text: text})
 	}
-	if b.Len() == 0 {
+	if len(lines) == 0 {
 		return 0, fmt.Errorf("no Telegram HTML messages in %s", source)
 	}
-	return storeChat(d, source, "Telegram", people, n, b.String(), time.Time{}, time.Time{})
-}
-
-func storeChat(d *store.DB, source, brand string, people map[string]struct{}, msgs int, body string, lastWhen, firstWhen time.Time) (int, error) {
-	title := brand + " export"
-	if n := len(people); n > 0 && n <= 4 {
-		var names []string
-		for p := range people {
-			names = append(names, p)
-		}
-		title = strings.Join(names, ", ")
-	} else if n > 4 {
-		title = fmt.Sprintf("%s group (%d people)", brand, n)
-	}
-	title = fmt.Sprintf("%s · %d msgs", title, msgs)
-	when := lastWhen
-	if when.IsZero() {
-		when = firstWhen
-	}
-	if _, err := d.Upsert(store.Item{
-		Kind:   store.KindChat,
-		Source: source,
-		Title:  title,
-		Body:   body,
-		When:   when,
-	}); err != nil {
-		return 0, err
-	}
-	return 1, nil
+	return storeChatLines(d, source, "Telegram", lines)
 }
 
 func parseTGStamp(date, clock string) time.Time {
@@ -237,7 +183,6 @@ func parseTGStamp(date, clock string) time.Time {
 }
 
 func parseTGTitleDate(title string) time.Time {
-	// "31.12.2023 10:15:22 UTC+03:00"
 	title = strings.TrimSpace(title)
 	if i := strings.Index(title, " UTC"); i > 0 {
 		title = title[:i]
