@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- First-run welcome (`folio` with no args), `folio init`, `folio help`
+- `folio serve --open` launches the browser
+- Drag-and-drop ingest in the reading room (`POST /api/ingest`)
+- `install.sh` for curl|bash setup
+- Goreleaser stub; roadmap train to **v0.57**
+
 ## 0.2.0
 
 - Upsert re-ingest, delete, stats; `occurred_at` on items

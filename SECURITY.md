@@ -16,13 +16,14 @@ Folio is a local library. Threat model and promises:
 
 ## Media endpoint
 
-`GET /api/media?id=` serves a screenshot file only when:
+`GET /api/media?id=` serves a screenshot file only when the item exists,
+`kind=shot`, and the request hits the local reading room.
 
-1. the item exists and `kind=shot`, and
-2. the request is on the local reading room (loopback bind).
+`POST /api/ingest` accepts a multipart file drop into `~/.folio/inbox/`
+and indexes it. Same loopback-only bind applies.
 
 Treat `folio serve` like opening a folder on your machine: anyone with
-local access to that port can read library content.
+local access to that port can read library content and add files.
 
 ## Reporting
 

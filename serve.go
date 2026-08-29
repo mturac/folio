@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"mime"
 	"net"
@@ -13,11 +14,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mturac/folio/ingest"
 	"github.com/mturac/folio/store"
 )
 
 func cmdServe(argv []string) error {
-	addr, err := listenAddr(argv)
+	open := false
+	var addrArgs []string
+	for _, a := range argv {
+		switch a {
+		case "--open", "-o":
+			open = true
+		default:
+			addrArgs = append(addrArgs, a)
+		}
+	}
+	addr, err := listenAddr(addrArgs)
 	if err != nil {
 		return err
 	}
@@ -26,6 +38,8 @@ func cmdServe(argv []string) error {
 		return err
 	}
 	defer d.Close()
+	inbox := filepath.Join(folioDir(), "inbox")
+	os.MkdirAll(inbox, 0o700)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +137,6 @@ func cmdServe(argv []string) error {
 			http.NotFound(w, r)
 			return
 		}
-		// Cap accidental huge files.
 		if fi.Size() > 40<<20 {
 			http.Error(w, "media too large", http.StatusRequestEntityTooLarge)
 			return
@@ -136,20 +149,111 @@ func cmdServe(argv []string) error {
 		w.Header().Set("Cache-Control", "private, max-age=60")
 		http.ServeFile(w, r, path)
 	})
+	mux.HandleFunc("/api/ingest", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST only", http.StatusMethodNotAllowed)
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 64<<20)
+		if err := r.ParseMultipartForm(64 << 20); err != nil {
+			http.Error(w, "bad multipart", http.StatusBadRequest)
+			return
+		}
+		file, hdr, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "file required", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		name := filepath.Base(hdr.Filename)
+		name = ingest.SanitizeSource(name)
+		if name == "" || name == "." || name == ".." {
+			http.Error(w, "bad filename", http.StatusBadRequest)
+			return
+		}
+		dst := filepath.Join(inbox, fmt.Sprintf("%d_%s", time.Now().UnixNano(), name))
+		out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if _, err := io.Copy(out, file); err != nil {
+			out.Close()
+			os.Remove(dst)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		out.Close()
+
+		kind := r.FormValue("kind")
+		if kind == "" {
+			kind = guessIngestKind(name)
+		}
+		n, err := ingestDropped(d, kind, dst)
+		if err != nil {
+			log.Printf("ingest drop: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"ingested": n, "kind": kind})
+	})
 
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	fmt.Printf("folio reading room → http://%s  (localhost only)\n", addr)
+	url := "http://" + addr
+	fmt.Printf("folio reading room → %s  (localhost only)\n", url)
+	if open {
+		go func() {
+			time.Sleep(250 * time.Millisecond)
+			openBrowser(url)
+		}()
+	}
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return err
 	}
 	return nil
+}
+
+func guessIngestKind(name string) string {
+	lower := strings.ToLower(name)
+	switch {
+	case strings.HasSuffix(lower, ".png"), strings.HasSuffix(lower, ".jpg"),
+		strings.HasSuffix(lower, ".jpeg"), strings.HasSuffix(lower, ".webp"),
+		strings.HasSuffix(lower, ".gif"), strings.HasSuffix(lower, ".heic"):
+		return "shots"
+	case strings.HasSuffix(lower, ".eml"), strings.HasSuffix(lower, ".mbox"):
+		return "letter"
+	case strings.HasSuffix(lower, ".zip"), strings.HasSuffix(lower, ".txt"):
+		return "chat"
+	case strings.HasSuffix(lower, ".html"), strings.HasSuffix(lower, ".htm"):
+		if strings.Contains(lower, "telegram") || strings.Contains(lower, "messages") ||
+			strings.Contains(lower, "chat") || strings.Contains(lower, "whatsapp") {
+			return "chat"
+		}
+		return "letter"
+	default:
+		return "letter"
+	}
+}
+
+func ingestDropped(d *store.DB, kind, path string) (int, error) {
+	switch kind {
+	case "chat":
+		return ingest.ImportChatPath(d, path)
+	case "letter":
+		return ingest.ImportLetterPath(d, path)
+	case "shots", "shot":
+		return ingest.ImportShots(d, filepath.Dir(path), ingest.BestOCR)
+	default:
+		return 0, fmt.Errorf("unknown kind %q", kind)
+	}
 }
 
 func listenAddr(argv []string) (string, error) {
@@ -267,12 +371,24 @@ const indexHTML = `<!doctype html>
     padding: .4rem .7rem; cursor: pointer;
   }
   .src { font: 12px/1.4 ui-sans-serif, system-ui, sans-serif; opacity: .45; margin-top: .35rem; word-break: break-all; }
+  .drop {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--accent) 18%, transparent); z-index: 40;
+    font: 1.2rem/1.4 "Iowan Old Style", Palatino, Georgia, serif; pointer-events: none;
+  }
+  .drop.on { display: flex; }
+  .drop span {
+    padding: 1rem 1.4rem; border: 1px dashed var(--accent); border-radius: 12px;
+    background: var(--paper);
+  }
+  .hint { font: 12px/1.4 ui-sans-serif, system-ui, sans-serif; opacity: .5; margin-top: .35rem; }
 </style>
 <div class="wrap">
   <header>
     <h1>folio</h1>
     <p class="tag">chats · screenshots · newsletters — on your disk</p>
     <div class="stats" id="stats"></div>
+    <p class="hint">drop a chat export, screenshot, or .eml anywhere on this page</p>
   </header>
   <div class="toolbar">
     <input id="q" placeholder="search boarding pass, wifi, weekly…" autofocus>
@@ -285,6 +401,7 @@ const indexHTML = `<!doctype html>
   </div>
   <div id="out"></div>
 </div>
+<div class="drop" id="drop"><span>drop to add to folio</span></div>
 <div class="detail" id="detail" role="dialog" aria-modal="true">
   <div class="sheet">
     <header>
@@ -403,6 +520,25 @@ document.querySelectorAll('.filters button').forEach(b => {
   });
 });
 q.addEventListener('input', () => { clearTimeout(q._t); q._t = setTimeout(run, 120); });
+const drop = document.getElementById('drop');
+let dragDepth = 0;
+window.addEventListener('dragenter', (e) => { e.preventDefault(); dragDepth++; drop.classList.add('on'); });
+window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) drop.classList.remove('on'); });
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', async (e) => {
+  e.preventDefault(); dragDepth = 0; drop.classList.remove('on');
+  const files = [...(e.dataTransfer?.files || [])];
+  if (!files.length) return;
+  for (const f of files) {
+    const fd = new FormData();
+    fd.append('file', f, f.name);
+    try {
+      const r = await fetch('/api/ingest', { method: 'POST', body: fd });
+      if (!r.ok) { console.warn(await r.text()); continue; }
+    } catch (err) { console.warn(err); }
+  }
+  loadStats(); run();
+});
 loadStats();
 run();
 </script>
