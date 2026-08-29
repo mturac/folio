@@ -24,6 +24,11 @@ go run . serve
    duplicate.
 5. **Small diffs** — one concern per PR when possible.
 
+## CI
+
+Pull requests are checked on **Buildkite** (`test` / `vet` / `build`).
+Setup notes: [docs/buildkite.md](docs/buildkite.md).
+
 ## PR checklist
 
 - [ ] `make test` and `make vet` pass

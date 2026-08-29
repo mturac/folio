@@ -83,3 +83,5 @@ hand it (or drop into the reading room). See [SECURITY.md](SECURITY.md).
 ## Status
 
 v0.6 · heading to **v0.57** public launch · MIT
+
+CI runs on [Buildkite](docs/buildkite.md).
