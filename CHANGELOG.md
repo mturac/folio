@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0
+
+- GitHub Actions + GoReleaser publish linux/darwin/windows binaries on `v*` tags
+- install.sh prefers release archives; README points at Releases
+
 ## 0.4.0
 
 - Message-level chat index: each WhatsApp/Telegram message is its own FTS row

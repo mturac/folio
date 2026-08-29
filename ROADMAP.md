@@ -11,7 +11,7 @@ easier to hold, not broader for its own sake.
 |-----|--------|
 | **0.2** | Library core (ingest / search / reading room) — merged |
 | **0.3** | First-run, install script, drop-to-ingest, `serve --open` — merged |
-| **0.4** | Message-level chat index (long exports stay sharp) |
+| **0.4** | Message-level chat index (long exports stay sharp) — merged |
 | **0.5** | GitHub Release binaries (macOS / Linux / Windows) |
 | **0.6–0.15** | Format depth (Signal export, PDF text, richer EML) |
 | **0.16–0.30** | Reading-room polish, TR/EN copy, keyboard flows |
@@ -25,9 +25,9 @@ Numbers move when the focus ships — empty bumps are not the point.
 
 - [x] Clean history on main (no Cursor authorship / Co-authored-by)
 - [ ] Repo visibility → public (owner action)
-- [x] Tag `v0.3.0`
-- [ ] Tag `v0.4.0` after message-index merges
-- [ ] Goreleaser for `v0.5.0`
+- [x] Tag `v0.4.0`
+- [ ] Tag `v0.5.0` to publish first release binaries
+- [ ] Goreleaser workflow on `v*` tags
 
 ## Non-goals
 
